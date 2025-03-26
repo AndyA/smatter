@@ -292,7 +292,7 @@ test "scanning" {
     var sm = try Smatter.init(
         std.testing.allocator,
         "test.json",
-        \\"","\"",hello,0,-1,1e-3,1.3,1.3E+3
+        \\"","\"",hello,0,-1,1e-3,1.3,1.3E+3,0.9e11
     ,
         output.writer().any(),
     );
@@ -317,6 +317,8 @@ test "scanning" {
     try expect(std.mem.eql(u8, try sm.scan_number(), "1.3"));
     try expect(sm.get_next() == ',');
     try expect(std.mem.eql(u8, try sm.scan_number(), "1.3E+3"));
+    try expect(sm.get_next() == ',');
+    try expect(std.mem.eql(u8, try sm.scan_number(), "0.9e11"));
 }
 
 test "json" {
