@@ -394,7 +394,6 @@ test "json" {
 
         try sm.walk();
         try std.testing.expectEqualDeep(output.items, case.expected);
-        // try expect(std.mem.eql(u8, output.items, case.expected));
     }
 }
 
@@ -419,6 +418,7 @@ fn smatter(source: []const u8) !void {
     const out = std.io.getStdOut();
     var buf = std.io.bufferedWriter(out.writer());
     const writer = buf.writer().any();
+
     var sm = try Smatter.init(arena.allocator(), source, data, writer);
     defer sm.deinit();
 
