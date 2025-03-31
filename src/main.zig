@@ -399,6 +399,10 @@ test "json" {
     }
 }
 
+fn bufferedWriterOfSize(comptime buffer_size: usize, underlying_stream: anytype) std.io.BufferedWriter(buffer_size, @TypeOf(underlying_stream)) {
+    return .{ .unbuffered_writer = underlying_stream };
+}
+
 fn smatter(source: []const u8) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -418,7 +422,7 @@ fn smatter(source: []const u8) !void {
     defer std.posix.munmap(data);
 
     const out = std.io.getStdOut();
-    var buf = std.io.bufferedWriter(out.writer());
+    var buf = bufferedWriterOfSize(128 * 1024, out.writer());
     const writer = buf.writer().any();
 
     var sm = try Smatter.init(arena.allocator(), source, data, writer);
