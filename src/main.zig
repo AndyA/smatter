@@ -29,121 +29,121 @@ fn is_bareword(key: []const u8) bool {
 const Smatter = struct {
     alloc: std.mem.Allocator,
     source: []const u8,
-    data: []const u8,
+    reader: std.io.AnyReader,
     writer: std.io.AnyWriter,
 
-    pos: usize,
     index: usize,
     path: std.ArrayList(u8),
+    value: std.ArrayList(u8),
+    nc: u8,
 
     const Self = @This();
 
     fn init(
         alloc: std.mem.Allocator,
         source: []const u8,
-        data: []const u8,
+        reader: std.io.AnyReader,
         writer: std.io.AnyWriter,
     ) !Self {
         var path = try std.ArrayList(u8).initCapacity(alloc, 1000);
         try path.append('$');
-        return Self{
+        const value = try std.ArrayList(u8).initCapacity(alloc, 1000);
+        var self = Self{
             .alloc = alloc,
             .source = source,
-            .data = data,
+            .reader = reader,
             .writer = writer,
-            .pos = 0,
             .index = 0,
             .path = path,
+            .value = value,
+            .nc = '.',
         };
+        try self.advance();
+        return self;
     }
 
     fn deinit(self: *Self) void {
         self.path.deinit();
+        self.value.deinit();
     }
 
-    fn eof(self: Self) bool {
-        return self.pos >= self.data.len;
-    }
-
-    fn peek_next(self: *Self) u8 {
-        while (!self.eof()) : (self.pos += 1) {
-            const c = self.data[self.pos];
-            if (!std.ascii.isWhitespace(c)) return c;
+    fn advance(self: *Self) !void {
+        if (self.nc == 0) return SmatterError.EndOfInput;
+        if (self.reader.readByte()) |nc| {
+            self.nc = nc;
+        } else |err| {
+            if (err != error.EndOfStream) return err;
+            self.nc = 0;
         }
-        return 0;
     }
 
-    fn skip_spaces(self: *Self) void {
-        _ = self.peek_next();
+    fn skip_space(self: *Self) !void {
+        while (std.ascii.isWhitespace(self.nc)) try self.advance();
     }
 
-    fn get_next(self: *Self) u8 {
-        if (self.eof()) return 0;
-        const c = self.data[self.pos];
-        self.pos += 1;
-        return c;
+    fn keep(self: *Self) !void {
+        if (self.nc == 0) return SmatterError.EndOfInput;
+        try self.value.append(self.nc);
+        try self.advance();
     }
 
-    fn scan_string(self: *Self) SmatterError![]const u8 {
-        const start = self.pos;
-        self.pos += 1;
-        while (!self.eof()) : (self.pos += 1) {
-            const c = self.data[self.pos];
-            // End of string?
-            if (c == '"') {
-                self.pos += 1;
-                return self.data[start..self.pos];
-            }
-            // Escaped character?
-            if (c == '\\') self.pos += 1;
+    fn clear_value(self: *Self) void {
+        self.value.items.len = 0;
+    }
+
+    fn scan_string(self: *Self) ![]const u8 {
+        self.clear_value();
+        try self.keep();
+
+        while (self.nc != '"') {
+            try self.keep();
+            if (self.nc == '\\')
+                try self.keep();
         }
-        return SmatterError.BadString;
+
+        try self.keep();
+
+        return self.value.items;
     }
 
-    fn parse_string(self: *Self) SmatterError![]const u8 {
-        if (self.peek_next() != '"') return SmatterError.BadString;
-        return self.scan_string();
+    fn parse_string(self: *Self) ![]const u8 {
+        try self.skip_space();
+        if (self.nc != '"') return SmatterError.BadString;
+        return try self.scan_string();
     }
 
-    fn scan_word(self: *Self) []const u8 {
-        const start = self.pos;
-        while (!self.eof()) : (self.pos += 1) {
-            const c = self.data[self.pos];
-            if (!std.ascii.isAlphabetic(c)) break;
-        }
-        return self.data[start..self.pos];
+    fn scan_word(self: *Self) ![]const u8 {
+        self.clear_value();
+        while (std.ascii.isWhitespace(self.nc)) try self.keep();
+        return self.value.items;
     }
 
-    fn scan_literal(self: *Self, comptime need: []const u8) SmatterError![]const u8 {
-        const word = self.scan_word();
+    fn scan_literal(self: *Self, comptime need: []const u8) ![]const u8 {
+        const word = try self.scan_word();
         if (!std.mem.eql(u8, word, need)) return SmatterError.BadToken;
         return word;
     }
 
-    fn consume_digits(self: *Self, c: u8) SmatterError!u8 {
-        if (!std.ascii.isDigit(c)) return SmatterError.BadNumber;
-        while (true) {
-            const cc = self.get_next();
-            if (!std.ascii.isDigit(cc)) return cc;
-        }
+    fn consume_digits(self: *Self) !void {
+        if (!std.ascii.isDigit(self.nc)) return SmatterError.BadNumber;
+        while (std.ascii.isDigit(self.nc)) try self.keep();
     }
 
-    fn scan_number(self: *Self) SmatterError![]const u8 {
-        const start = self.pos;
-        if (self.peek_next() == '-') self.pos += 1;
-
-        var c = try self.consume_digits(self.get_next());
-        if (c == '.')
-            c = try self.consume_digits(self.get_next());
-
-        if (c == 'e' or c == 'E') {
-            c = self.get_next();
-            if (c == '+' or c == '-') c = self.get_next();
-            c = try self.consume_digits(c);
+    fn scan_number(self: *Self) ![]const u8 {
+        self.clear_value();
+        try self.skip_space();
+        if (self.nc == '-') try self.keep();
+        try self.consume_digits();
+        if (self.nc == '.') {
+            try self.keep();
+            try self.consume_digits();
         }
-
-        if (c != 0) self.pos -= 1;
-        return self.data[start..self.pos];
+        if (self.nc == 'e' or self.nc == 'E') {
+            try self.keep();
+            if (self.nc == '+' or self.nc == '-') try self.keep();
+            try self.consume_digits();
+        }
+        return self.value.items;
     }
 
     fn add_index_to_path(self: *Self, index: usize) !void {
@@ -170,9 +170,11 @@ const Smatter = struct {
     }
 
     fn walk_array(self: *Self) !void {
-        self.pos += 1;
-        if (self.peek_next() == ']') {
-            self.pos += 1;
+        if (self.nc != '[') return SmatterError.BadToken;
+        try self.advance();
+        try self.skip_space();
+        if (self.nc == ']') {
+            try self.advance();
             return self.emit("o", "\"[]\"");
         }
 
@@ -185,19 +187,23 @@ const Smatter = struct {
             try self.add_index_to_path(index);
             try self.walk_json();
 
-            self.skip_spaces();
-            const c = self.get_next();
-
-            if (c == ']') break;
-            if (c != ',') return SmatterError.MissingComma;
+            try self.skip_space();
+            if (self.nc == ']') {
+                try self.advance();
+                break;
+            }
+            if (self.nc != ',') return SmatterError.MissingComma;
+            try self.advance();
         }
     }
 
     fn walk_object(self: *Self) !void {
-        self.pos += 1;
+        if (self.nc != '{') return SmatterError.BadToken;
+        try self.advance();
+        try self.skip_space();
 
-        if (self.peek_next() == '}') {
-            self.pos += 1;
+        if (self.nc == '}') {
+            try self.advance();
             return self.emit("o", "\"{}\"");
         }
 
@@ -209,28 +215,32 @@ const Smatter = struct {
             const key = try self.parse_string();
             try self.add_key_to_path(key);
 
-            self.skip_spaces();
-            if (self.get_next() != ':') return SmatterError.MissingColon;
+            try self.skip_space();
+            if (self.nc != ':') return SmatterError.MissingColon;
+            try self.advance();
 
             try self.walk_json();
 
-            self.skip_spaces();
-            const c = self.get_next();
+            try self.skip_space();
 
-            if (c == '}') break;
-            if (c != ',') return SmatterError.MissingComma;
+            if (self.nc == '}') {
+                try self.advance();
+                break;
+            }
+            if (self.nc != ',') return SmatterError.MissingComma;
+            try self.advance();
         }
     }
 
     fn walk_json(self: *Self) anyerror!void {
-        self.skip_spaces();
+        try self.skip_space();
 
-        if (self.eof())
+        if (self.nc == 0)
             return SmatterError.EndOfInput;
 
-        return switch (self.data[self.pos]) {
-            '[' => self.walk_array(),
-            '{' => self.walk_object(),
+        return switch (self.nc) {
+            '[' => try self.walk_array(),
+            '{' => try self.walk_object(),
             '"' => self.emit("s", try self.scan_string()),
             't' => self.emit("b", try self.scan_literal("true")),
             'f' => self.emit("b", try self.scan_literal("false")),
@@ -254,11 +264,12 @@ const Smatter = struct {
         self.index = 0;
         while (true) : (self.index += 1) {
             try self.walk_json();
-            if (self.peek_next() == ',') {
-                self.pos += 1;
-                self.skip_spaces();
+            try self.skip_space();
+            if (self.nc == ',') {
+                try self.advance();
+                try self.skip_space();
             }
-            if (self.eof()) break;
+            if (self.nc == 0) break;
         }
     }
 };
@@ -399,37 +410,51 @@ test "json" {
     }
 }
 
-fn bufferedWriterOfSize(comptime buffer_size: usize, underlying_stream: anytype) std.io.BufferedWriter(buffer_size, @TypeOf(underlying_stream)) {
-    return .{ .unbuffered_writer = underlying_stream };
+const BW = std.io.BufferedWriter;
+fn bufferedWriterOfSize(comptime size: usize, stream: anytype) BW(size, @TypeOf(stream)) {
+    return .{ .unbuffered_writer = stream };
+}
+
+const BR = std.io.BufferedReader;
+fn bufferedReaderOfSize(comptime size: usize, stream: anytype) BR(size, @TypeOf(stream)) {
+    return .{ .unbuffered_reader = stream };
+}
+
+fn walk(
+    alloc: std.mem.Allocator,
+    source: []const u8,
+    reader: std.io.AnyReader,
+    writer: std.io.AnyWriter,
+) !void {
+    var sm = try Smatter.init(alloc, source, reader, writer);
+    defer sm.deinit();
+    try sm.walk();
 }
 
 fn smatter(source: []const u8) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    const file = try std.fs.cwd().openFile(source, .{});
-    defer file.close();
+    const out_stream = std.io.getStdOut();
+    var out_buf = bufferedWriterOfSize(128 * 1024, out_stream.writer());
+    const writer = out_buf.writer().any();
 
-    const md = try file.metadata();
-    const data = try std.posix.mmap(
-        null,
-        md.size(),
-        std.posix.PROT.READ,
-        .{ .TYPE = .SHARED },
-        file.handle,
-        0,
-    );
-    defer std.posix.munmap(data);
+    if (std.mem.eql(u8, source, "-")) {
+        const in_file = std.io.getStdIn();
+        var in_buf = bufferedReaderOfSize(128 * 1024, in_file.reader());
+        const reader = in_buf.reader().any();
+        try walk(arena.allocator(), source, reader, writer);
+    } else {
+        const in_file = try std.fs.cwd().openFile(source, .{});
+        defer in_file.close();
 
-    const out = std.io.getStdOut();
-    var buf = bufferedWriterOfSize(128 * 1024, out.writer());
-    const writer = buf.writer().any();
+        // const in_stream = std.io.getStdIn();
+        var in_buf = bufferedReaderOfSize(128 * 1024, in_file.reader());
+        const reader = in_buf.reader().any();
+        try walk(arena.allocator(), source, reader, writer);
+    }
 
-    var sm = try Smatter.init(arena.allocator(), source, data, writer);
-    defer sm.deinit();
-
-    try sm.walk();
-    try buf.flush();
+    try out_buf.flush();
 }
 
 pub fn main() !void {
