@@ -81,10 +81,7 @@ const Smatter = struct {
 
     fn skip_space(self: *Self) !void {
         while (std.ascii.isWhitespace(self.nc)) {
-            if (self.nc == '\n') {
-                self.line += 1;
-                std.debug.print("line {d}\n", .{self.line});
-            }
+            if (self.nc == '\n') self.line += 1;
             try self.advance();
         }
     }
@@ -229,7 +226,6 @@ const Smatter = struct {
             try self.walk_json();
 
             try self.skip_space();
-            std.debug.print("nc {c}\n", .{self.nc});
 
             if (self.nc == '}') {
                 try self.advance();
