@@ -15,6 +15,16 @@ pub fn build(b: *std.Build) void {
         .root_module = smatter_mod,
     });
 
+    const zig_cli = b.dependency("cli", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    smatter.root_module.addImport("zig-cli", zig_cli.module("zig-cli"));
+
+    // smatter.addModule("cli", zig_cli.module("cli"));
+    // smatter.linkLibrary(zig_cli.artifact("cli"));
+
     b.installArtifact(smatter);
 
     const smatter_cmd = b.addRunArtifact(smatter);
@@ -33,25 +43,4 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_smatter_unit_tests.step);
-
-    const zat_mod = b.createModule(.{
-        .root_source_file = b.path("src/zat.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const zat = b.addExecutable(.{
-        .name = "zat",
-        .root_module = zat_mod,
-    });
-
-    b.installArtifact(zat);
-
-    const zat_cmd = b.addRunArtifact(zat);
-    zat_cmd.step.dependOn(b.getInstallStep());
-
-    if (b.args) |args| zat_cmd.addArgs(args);
-
-    const zat_step = b.step("zat", "Run zat");
-    zat_step.dependOn(&zat_cmd.step);
 }

@@ -1,4 +1,5 @@
 const std = @import("std");
+const cli = @import("zig-cli");
 
 const expect = std.testing.expect;
 
@@ -190,8 +191,8 @@ const Smatter = struct {
             self.path.items.len = old_len;
             try self.add_index_to_path(index);
             try self.walk_json();
-
             try self.skip_space();
+
             if (self.nc == ']') {
                 try self.advance();
                 break;
@@ -218,13 +219,11 @@ const Smatter = struct {
             self.path.items.len = old_len;
             const key = try self.parse_string();
             try self.add_key_to_path(key);
-
             try self.skip_space();
             if (self.nc != ':') return SmatterError.MissingColon;
             try self.advance();
 
             try self.walk_json();
-
             try self.skip_space();
 
             if (self.nc == '}') {
@@ -435,7 +434,7 @@ fn walk(
     try sm.walk();
 }
 
-fn smatter(source: []const u8) !void {
+fn smatter(source: []const u8, name_override: []const u8) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
@@ -447,7 +446,7 @@ fn smatter(source: []const u8) !void {
         const in_file = std.io.getStdIn();
         var in_buf = bufferedReaderOfSize(128 * 1024, in_file.reader());
         const reader = in_buf.reader().any();
-        try walk(arena.allocator(), source, reader, writer);
+        try walk(arena.allocator(), name_override, reader, writer);
     } else {
         const in_file = try std.fs.cwd().openFile(source, .{});
         defer in_file.close();
@@ -461,8 +460,50 @@ fn smatter(source: []const u8) !void {
     try out_buf.flush();
 }
 
-pub fn main() !void {
-    for (std.os.argv[1..]) |arg| {
-        try smatter(std.mem.span(arg));
+const Config = struct {
+    files: []const []const u8,
+    name_override: []const u8,
+};
+
+var config = Config{ .files = undefined, .name_override = "-" };
+
+fn run_smatter() !void {
+    for (config.files) |file| {
+        try smatter(file, config.name_override);
     }
+}
+
+pub fn main() !void {
+    var r = try cli.AppRunner.init(std.heap.page_allocator);
+
+    // Create an App with a command named "short" that takes host and port options.
+    const app = cli.App{
+        .command = cli.Command{
+            .name = "smatter",
+            .options = try r.allocOptions(&.{
+                // Define an Option for the "host" command-line argument.
+                .{
+                    .long_name = "filename",
+                    .help = "Override the 'f' (filename) field in the output.",
+                    .value_ref = r.mkRef(&config.name_override),
+                },
+            }),
+            .target = cli.CommandTarget{
+                .action = cli.CommandAction{
+                    .positional_args = cli.PositionalArgs{
+                        .optional = try r.allocPositionalArgs(&.{
+                            .{
+                                .name = "files",
+                                .help = "Files to process. Use '-' for stdin.",
+                                .value_ref = r.mkRef(&config.files),
+                            },
+                        }),
+                    },
+                    .exec = run_smatter,
+                },
+            },
+        },
+    };
+
+    return r.run(&app);
 }
