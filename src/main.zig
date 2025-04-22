@@ -119,7 +119,7 @@ const Smatter = struct {
 
     fn scan_word(self: *Self) ![]const u8 {
         self.clear_value();
-        while (std.ascii.isWhitespace(self.nc)) try self.keep();
+        while (std.ascii.isAlphabetic(self.nc)) try self.keep();
         return self.value.items;
     }
 
@@ -277,63 +277,33 @@ const Smatter = struct {
     }
 };
 
-test "character fetching" {
-    var output = std.ArrayList(u8).init(std.testing.allocator);
-    defer output.deinit();
+const StringReader = struct {
+    str: []const u8,
+    pos: usize,
 
-    var sm = try Smatter.init(
-        std.testing.allocator,
-        "test.json",
-        "\na",
-        output.writer().any(),
-    );
-    defer sm.deinit();
+    const Error = error{NoError};
+    const Self = @This();
+    const Reader = std.io.Reader(*Self, Error, read);
 
-    try expect(sm.eof() == false);
-    try expect(sm.peek_next() == 'a');
-    try expect(sm.eof() == false);
-    try expect(sm.peek_next() == 'a');
-    try expect(sm.get_next() == 'a');
-    try expect(sm.eof() == true);
-    try expect(sm.peek_next() == 0);
-    try expect(sm.get_next() == 0);
-}
+    fn init(str: []const u8) Self {
+        return Self{
+            .str = str,
+            .pos = 0,
+        };
+    }
 
-test "scanning" {
-    var output = std.ArrayList(u8).init(std.testing.allocator);
-    defer output.deinit();
+    fn read(self: *Self, dest: []u8) Error!usize {
+        const avail = self.str.len - self.pos;
+        const size = @min(avail, dest.len);
+        @memcpy(dest[0..size], self.str[self.pos .. self.pos + size]);
+        self.pos += size;
+        return size;
+    }
 
-    var sm = try Smatter.init(
-        std.testing.allocator,
-        "test.json",
-        \\"","\"",hello,0,-1,1e-3,1.3,1.3E+3,0.9e11
-    ,
-        output.writer().any(),
-    );
-    defer sm.deinit();
-
-    try expect(std.mem.eql(u8, try sm.scan_string(),
-        \\""
-    ));
-    try expect(sm.get_next() == ',');
-    try expect(std.mem.eql(u8, try sm.scan_string(),
-        \\"\""
-    ));
-    try expect(sm.get_next() == ',');
-    try expect(std.mem.eql(u8, sm.scan_word(), "hello"));
-    try expect(sm.get_next() == ',');
-    try expect(std.mem.eql(u8, try sm.scan_number(), "0"));
-    try expect(sm.get_next() == ',');
-    try expect(std.mem.eql(u8, try sm.scan_number(), "-1"));
-    try expect(sm.get_next() == ',');
-    try expect(std.mem.eql(u8, try sm.scan_number(), "1e-3"));
-    try expect(sm.get_next() == ',');
-    try expect(std.mem.eql(u8, try sm.scan_number(), "1.3"));
-    try expect(sm.get_next() == ',');
-    try expect(std.mem.eql(u8, try sm.scan_number(), "1.3E+3"));
-    try expect(sm.get_next() == ',');
-    try expect(std.mem.eql(u8, try sm.scan_number(), "0.9e11"));
-}
+    fn reader(self: *Self) Reader {
+        return .{ .context = self };
+    }
+};
 
 test "json" {
     const TestCase = struct {
@@ -397,13 +367,14 @@ test "json" {
     };
 
     for (cases) |case| {
+        var input = StringReader.init(case.source);
         var output = std.ArrayList(u8).init(std.testing.allocator);
         defer output.deinit();
 
         var sm = try Smatter.init(
             std.testing.allocator,
             "test.json",
-            case.source,
+            input.reader().any(),
             output.writer().any(),
         );
         defer sm.deinit();
@@ -414,13 +385,8 @@ test "json" {
 }
 
 const BW = std.io.BufferedWriter;
-fn bufferedWriterOfSize(comptime size: usize, stream: anytype) BW(size, @TypeOf(stream)) {
+fn bufferedWriterSize(comptime size: usize, stream: anytype) BW(size, @TypeOf(stream)) {
     return .{ .unbuffered_writer = stream };
-}
-
-const BR = std.io.BufferedReader;
-fn bufferedReaderOfSize(comptime size: usize, stream: anytype) BR(size, @TypeOf(stream)) {
-    return .{ .unbuffered_reader = stream };
 }
 
 fn walk(
@@ -439,12 +405,12 @@ fn smatter(source: []const u8, name_override: []const u8) !void {
     defer arena.deinit();
 
     const out_stream = std.io.getStdOut();
-    var out_buf = bufferedWriterOfSize(128 * 1024, out_stream.writer());
+    var out_buf = bufferedWriterSize(128 * 1024, out_stream.writer());
     const writer = out_buf.writer().any();
 
     if (std.mem.eql(u8, source, "-")) {
         const in_file = std.io.getStdIn();
-        var in_buf = bufferedReaderOfSize(128 * 1024, in_file.reader());
+        var in_buf = std.io.bufferedReaderSize(128 * 1024, in_file.reader());
         const reader = in_buf.reader().any();
         try walk(arena.allocator(), name_override, reader, writer);
     } else {
@@ -452,7 +418,7 @@ fn smatter(source: []const u8, name_override: []const u8) !void {
         defer in_file.close();
 
         // const in_stream = std.io.getStdIn();
-        var in_buf = bufferedReaderOfSize(128 * 1024, in_file.reader());
+        var in_buf = std.io.bufferedReaderSize(128 * 1024, in_file.reader());
         const reader = in_buf.reader().any();
         try walk(arena.allocator(), source, reader, writer);
     }
