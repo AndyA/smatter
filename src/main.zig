@@ -136,7 +136,6 @@ const Smatter = struct {
 
     fn scan_number(self: *Self) ![]const u8 {
         self.clear_value();
-        try self.skip_space();
         if (self.nc == '-') try self.keep();
         try self.consume_digits();
         if (self.nc == '.') {
@@ -322,7 +321,7 @@ test "smatter" {
         \\
         },
         .{ .source = 
-        \\[1, 2, 3]
+        \\[ 1, 2, 3 ]
         , .expected = 
         \\{"f":"test.json","i":0,"p":"$[0]","n":1}
         \\{"f":"test.json","i":0,"p":"$[1]","n":2}
@@ -439,12 +438,10 @@ fn run_smatter() !void {
 pub fn main() !void {
     var r = try cli.AppRunner.init(std.heap.page_allocator);
 
-    // Create an App with a command named "short" that takes host and port options.
     const app = cli.App{
         .command = cli.Command{
             .name = "smatter",
             .options = try r.allocOptions(&.{
-                // Define an Option for the "host" command-line argument.
                 .{
                     .long_name = "filename",
                     .help = "Override the 'f' (filename) field in the output.",
