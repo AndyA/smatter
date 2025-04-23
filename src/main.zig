@@ -286,10 +286,7 @@ const StringReader = struct {
     const Reader = std.io.Reader(*Self, Error, read);
 
     fn init(str: []const u8) Self {
-        return Self{
-            .str = str,
-            .pos = 0,
-        };
+        return Self{ .str = str, .pos = 0 };
     }
 
     fn read(self: *Self, dest: []u8) Error!usize {
