@@ -277,7 +277,7 @@ const Smatter = struct {
     }
 };
 
-test "json" {
+test "smatter" {
     const StringReader = struct {
         str: []const u8,
         pos: usize,
