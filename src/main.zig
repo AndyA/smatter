@@ -48,8 +48,10 @@ const Smatter = struct {
         writer: std.io.AnyWriter,
     ) !Self {
         var path = try std.ArrayList(u8).initCapacity(alloc, 1000);
+        errdefer path.deinit();
         try path.append('$');
         const value = try std.ArrayList(u8).initCapacity(alloc, 1000);
+        errdefer value.deinit();
         var self = Self{
             .alloc = alloc,
             .source = source,
