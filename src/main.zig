@@ -277,32 +277,32 @@ const Smatter = struct {
     }
 };
 
-const StringReader = struct {
-    str: []const u8,
-    pos: usize,
-
-    const Error = error{NoError};
-    const Self = @This();
-    const Reader = std.io.Reader(*Self, Error, read);
-
-    fn init(str: []const u8) Self {
-        return Self{ .str = str, .pos = 0 };
-    }
-
-    fn read(self: *Self, dest: []u8) Error!usize {
-        const avail = self.str.len - self.pos;
-        const size = @min(avail, dest.len);
-        @memcpy(dest[0..size], self.str[self.pos .. self.pos + size]);
-        self.pos += size;
-        return size;
-    }
-
-    fn reader(self: *Self) Reader {
-        return .{ .context = self };
-    }
-};
-
 test "json" {
+    const StringReader = struct {
+        str: []const u8,
+        pos: usize,
+
+        const Error = error{NoError};
+        const Self = @This();
+        const Reader = std.io.Reader(*Self, Error, read);
+
+        fn init(str: []const u8) Self {
+            return Self{ .str = str, .pos = 0 };
+        }
+
+        fn read(self: *Self, dest: []u8) Error!usize {
+            const avail = self.str.len - self.pos;
+            const size = @min(avail, dest.len);
+            @memcpy(dest[0..size], self.str[self.pos .. self.pos + size]);
+            self.pos += size;
+            return size;
+        }
+
+        fn reader(self: *Self) Reader {
+            return .{ .context = self };
+        }
+    };
+
     const TestCase = struct {
         source: []const u8,
         expected: []const u8,
