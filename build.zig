@@ -22,9 +22,6 @@ pub fn build(b: *std.Build) void {
 
     smatter.root_module.addImport("zig-cli", zig_cli.module("zig-cli"));
 
-    // smatter.addModule("cli", zig_cli.module("cli"));
-    // smatter.linkLibrary(zig_cli.artifact("cli"));
-
     b.installArtifact(smatter);
 
     const smatter_cmd = b.addRunArtifact(smatter);
