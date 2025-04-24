@@ -50,8 +50,10 @@ const Smatter = struct {
         var path = try std.ArrayList(u8).initCapacity(alloc, 1000);
         errdefer path.deinit();
         try path.append('$');
+
         const value = try std.ArrayList(u8).initCapacity(alloc, 1000);
         errdefer value.deinit();
+
         var self = Self{
             .alloc = alloc,
             .source = source,
@@ -63,7 +65,9 @@ const Smatter = struct {
             .nc = '.',
             .line = 1,
         };
+
         try self.advance();
+
         return self;
     }
 
@@ -337,7 +341,14 @@ test "smatter" {
         \\
         },
         .{ .source = 
-        \\{"a":1, "c": [], "b": {"d": 2}}
+        \\{ }{ }
+        , .expected = 
+        \\{"f":"test.json","i":0,"p":"$","o":"{}"}
+        \\{"f":"test.json","i":1,"p":"$","o":"{}"}
+        \\
+        },
+        .{ .source = 
+        \\{ "a":1, "c": [], "b": {"d": 2}}
         , .expected = 
         \\{"f":"test.json","i":0,"p":"$.a","n":1}
         \\{"f":"test.json","i":0,"p":"$.c","o":"[]"}
@@ -345,8 +356,11 @@ test "smatter" {
         \\
         },
         .{ .source = 
-        \\{"a":1, "c": [], "b": {"d": 2}}
+        \\{"a":1, "c": [ ], "b": {"d": 2}}
         \\[1, 2, 3]
+        \\true
+        \\false
+        \\[ true, false, null, 1.23, 999999999999999999999999, "hello", "world" ]
         , .expected = 
         \\{"f":"test.json","i":0,"p":"$.a","n":1}
         \\{"f":"test.json","i":0,"p":"$.c","o":"[]"}
@@ -354,12 +368,28 @@ test "smatter" {
         \\{"f":"test.json","i":1,"p":"$[0]","n":1}
         \\{"f":"test.json","i":1,"p":"$[1]","n":2}
         \\{"f":"test.json","i":1,"p":"$[2]","n":3}
+        \\{"f":"test.json","i":2,"p":"$","b":true}
+        \\{"f":"test.json","i":3,"p":"$","b":false}
+        \\{"f":"test.json","i":4,"p":"$[0]","b":true}
+        \\{"f":"test.json","i":4,"p":"$[1]","b":false}
+        \\{"f":"test.json","i":4,"p":"$[2]","o":"null"}
+        \\{"f":"test.json","i":4,"p":"$[3]","n":1.23}
+        \\{"f":"test.json","i":4,"p":"$[4]","n":999999999999999999999999}
+        \\{"f":"test.json","i":4,"p":"$[5]","s":"hello"}
+        \\{"f":"test.json","i":4,"p":"$[6]","s":"world"}
         \\
         },
         .{ .source = 
         \\null
         , .expected = 
         \\{"f":"test.json","i":0,"p":"$","o":"null"}
+        \\
+        },
+        .{ .source = 
+        \\null null
+        , .expected = 
+        \\{"f":"test.json","i":0,"p":"$","o":"null"}
+        \\{"f":"test.json","i":1,"p":"$","o":"null"}
         \\
         },
     };
