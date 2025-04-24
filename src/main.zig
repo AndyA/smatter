@@ -38,6 +38,7 @@ const Smatter = struct {
     value: std.ArrayList(u8),
     nc: u8,
     line: usize,
+    col: usize,
 
     const Self = @This();
 
@@ -64,6 +65,7 @@ const Smatter = struct {
             .value = value,
             .nc = '.',
             .line = 1,
+            .col = 0,
         };
 
         try self.advance();
@@ -80,6 +82,7 @@ const Smatter = struct {
         if (self.nc == 0) return SmatterError.EndOfInput;
         if (self.reader.readByte()) |nc| {
             self.nc = nc;
+            self.col += 1;
         } else |err| {
             if (err != error.EndOfStream) return err;
             self.nc = 0;
@@ -88,7 +91,10 @@ const Smatter = struct {
 
     fn skip_space(self: *Self) !void {
         while (std.ascii.isWhitespace(self.nc)) {
-            if (self.nc == '\n') self.line += 1;
+            if (self.nc == '\n') {
+                self.line += 1;
+                self.col = 0;
+            }
             try self.advance();
         }
     }
@@ -280,6 +286,17 @@ const Smatter = struct {
             if (self.nc == 0) break;
         }
     }
+
+    pub fn walk_and_report(self: *Self) !void {
+        return self.walk() catch |err| {
+            std.debug.print("{s}, line {d}, column {d}\n", .{
+                self.source,
+                self.line,
+                self.col,
+            });
+            return err;
+        };
+    }
 };
 
 test "smatter" {
@@ -425,7 +442,7 @@ fn walk(
 ) !void {
     var sm = try Smatter.init(alloc, source, reader, writer);
     defer sm.deinit();
-    try sm.walk();
+    try sm.walk_and_report();
 }
 
 fn smatter(source: []const u8, name_override: []const u8) !void {
