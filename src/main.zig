@@ -476,6 +476,7 @@ pub fn main() !void {
             .options = try r.allocOptions(&.{
                 .{
                     .long_name = "filename",
+                    .short_alias = 'f',
                     .help = "Override the 'f' (filename) field in the output.",
                     .value_ref = r.mkRef(&config.name_override),
                 },
