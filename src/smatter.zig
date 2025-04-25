@@ -192,7 +192,6 @@ pub const Smatter = struct {
         }
 
         const old_len = self.path.items.len;
-        defer self.path.items.len = old_len;
 
         var index: usize = 0;
         while (true) : (index += 1) {
@@ -208,6 +207,9 @@ pub const Smatter = struct {
             if (self.nc != ',') try self.nice_error(SmatterError.MissingComma);
             try self.advance();
         }
+
+        // Not deferred so the path is preserved if we bail
+        self.path.items.len = old_len;
     }
 
     fn scan_object(self: *Self) !void {
@@ -220,7 +222,6 @@ pub const Smatter = struct {
         }
 
         const old_len = self.path.items.len;
-        defer self.path.items.len = old_len;
 
         while (true) {
             self.path.items.len = old_len;
@@ -240,6 +241,9 @@ pub const Smatter = struct {
             if (self.nc != ',') try self.nice_error(SmatterError.MissingComma);
             try self.advance();
         }
+
+        // Not deferred so the path is preserved if we bail
+        self.path.items.len = old_len;
     }
 
     fn scan_json(self: *Self) anyerror!void {

@@ -20,9 +20,9 @@ fn smat_stream(
         const file = if (std.mem.eql(u8, source, "-")) "<stdin>" else source;
         const nc = if (std.ascii.isPrint(sm.nc)) sm.nc else '?';
         std.debug.print(
-            \\Syntax error: {s} ('{c}') in {s} line {d}, column {d}
+            \\Syntax error: {s} ('{c}') at {s} in {s} line {d}, column {d}
             \\
-        , .{ @errorName(err), nc, file, sm.line, sm.col });
+        , .{ @errorName(err), nc, sm.path.items, file, sm.line, sm.col });
         std.process.exit(1);
     };
 }
