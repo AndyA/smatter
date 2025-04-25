@@ -16,9 +16,10 @@ pub const Smatter = struct {
     reader: std.io.AnyReader,
     writer: std.io.AnyWriter,
 
-    index: usize,
     path: std.ArrayList(u8),
     value: std.ArrayList(u8),
+    index: usize,
+
     nc: u8,
     line: usize,
     col: usize,
