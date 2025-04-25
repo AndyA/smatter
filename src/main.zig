@@ -31,8 +31,8 @@ fn smatFile(source: []const u8, name_override: []const u8) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    const out_stream = std.io.getStdOut();
-    var out_buf = bufferedWriterSize(128 * 1024, out_stream.writer());
+    const out_file = std.io.getStdOut();
+    var out_buf = bufferedWriterSize(128 * 1024, out_file.writer());
     const writer = out_buf.writer().any();
 
     if (std.mem.eql(u8, source, "-")) {

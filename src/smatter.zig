@@ -133,7 +133,7 @@ pub const Smatter = struct {
         return word;
     }
 
-    fn consumeDigits(self: *Self) !void {
+    fn scanDigits(self: *Self) !void {
         if (!std.ascii.isDigit(self.nc)) try self.niceError(SmatterError.BadNumber);
         while (std.ascii.isDigit(self.nc)) try self.keep();
     }
@@ -141,15 +141,15 @@ pub const Smatter = struct {
     fn scanNumber(self: *Self) ![]const u8 {
         self.clearValue();
         if (self.nc == '-') try self.keep();
-        try self.consumeDigits();
+        try self.scanDigits();
         if (self.nc == '.') {
             try self.keep();
-            try self.consumeDigits();
+            try self.scanDigits();
         }
         if (self.nc == 'e' or self.nc == 'E') {
             try self.keep();
             if (self.nc == '+' or self.nc == '-') try self.keep();
-            try self.consumeDigits();
+            try self.scanDigits();
         }
         return self.value.items;
     }
