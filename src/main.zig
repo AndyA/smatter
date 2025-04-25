@@ -289,10 +289,11 @@ const Smatter = struct {
 
     pub fn walk_and_report(self: *Self) !void {
         return self.walk() catch |err| {
-            std.debug.print("{s}, line {d}, column {d}\n", .{
+            std.debug.print("Syntax error in {s}, line {d}, column {d}: {s}\n", .{
                 self.source,
                 self.line,
                 self.col,
+                @errorName(err),
             });
             return err;
         };
@@ -455,6 +456,7 @@ fn smatter(source: []const u8, name_override: []const u8) !void {
 
     if (std.mem.eql(u8, source, "-")) {
         const in_file = std.io.getStdIn();
+
         var in_buf = std.io.bufferedReaderSize(128 * 1024, in_file.reader());
         const reader = in_buf.reader().any();
         try walk(arena.allocator(), name_override, reader, writer);
@@ -462,7 +464,6 @@ fn smatter(source: []const u8, name_override: []const u8) !void {
         const in_file = try std.fs.cwd().openFile(source, .{});
         defer in_file.close();
 
-        // const in_stream = std.io.getStdIn();
         var in_buf = std.io.bufferedReaderSize(128 * 1024, in_file.reader());
         const reader = in_buf.reader().any();
         try walk(arena.allocator(), source, reader, writer);
@@ -480,7 +481,10 @@ var config = Config{ .files = undefined, .name_override = "-" };
 
 fn run_smatter() !void {
     for (config.files) |file| {
-        try smatter(file, config.name_override);
+        smatter(file, config.name_override) catch |err| {
+            std.debug.print("{s} in {s}\n", .{ @errorName(err), file });
+            return err;
+        };
     }
 }
 
@@ -501,7 +505,7 @@ pub fn main() !void {
             .target = cli.CommandTarget{
                 .action = cli.CommandAction{
                     .positional_args = cli.PositionalArgs{
-                        .optional = try r.allocPositionalArgs(&.{
+                        .required = try r.allocPositionalArgs(&.{
                             .{
                                 .name = "files",
                                 .help = "Files to process. Use '-' for stdin.",
