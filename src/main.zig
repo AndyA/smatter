@@ -105,6 +105,12 @@ const Smatter = struct {
         try self.advance();
     }
 
+    fn nice_error(self: Self, err: SmatterError) SmatterError!void {
+        return if (self.nc == 0)
+            SmatterError.EndOfInput
+        else
+            err;
+    }
     fn clear_value(self: *Self) void {
         self.value.items.len = 0;
     }
@@ -125,7 +131,7 @@ const Smatter = struct {
 
     fn parse_string(self: *Self) ![]const u8 {
         try self.skip_space();
-        if (self.nc != '"') return SmatterError.BadString;
+        if (self.nc != '"') try self.nice_error(SmatterError.BadString);
         return try self.scan_string();
     }
 
@@ -137,12 +143,12 @@ const Smatter = struct {
 
     fn scan_literal(self: *Self, comptime need: []const u8) ![]const u8 {
         const word = try self.scan_word();
-        if (!std.mem.eql(u8, word, need)) return SmatterError.BadToken;
+        if (!std.mem.eql(u8, word, need)) try self.nice_error(SmatterError.BadToken);
         return word;
     }
 
     fn consume_digits(self: *Self) !void {
-        if (!std.ascii.isDigit(self.nc)) return SmatterError.BadNumber;
+        if (!std.ascii.isDigit(self.nc)) try self.nice_error(SmatterError.BadNumber);
         while (std.ascii.isDigit(self.nc)) try self.keep();
     }
 
@@ -186,7 +192,6 @@ const Smatter = struct {
     }
 
     fn walk_array(self: *Self) !void {
-        if (self.nc != '[') return SmatterError.BadToken;
         try self.advance();
         try self.skip_space();
         if (self.nc == ']') {
@@ -208,13 +213,12 @@ const Smatter = struct {
                 try self.advance();
                 break;
             }
-            if (self.nc != ',') return SmatterError.MissingComma;
+            if (self.nc != ',') try self.nice_error(SmatterError.MissingComma);
             try self.advance();
         }
     }
 
     fn walk_object(self: *Self) !void {
-        if (self.nc != '{') return SmatterError.BadToken;
         try self.advance();
         try self.skip_space();
 
@@ -231,7 +235,7 @@ const Smatter = struct {
             const key = try self.parse_string();
             try self.add_key_to_path(key);
             try self.skip_space();
-            if (self.nc != ':') return SmatterError.MissingColon;
+            if (self.nc != ':') try self.nice_error(SmatterError.MissingColon);
             try self.advance();
 
             try self.walk_json();
@@ -241,16 +245,13 @@ const Smatter = struct {
                 try self.advance();
                 break;
             }
-            if (self.nc != ',') return SmatterError.MissingComma;
+            if (self.nc != ',') try self.nice_error(SmatterError.MissingComma);
             try self.advance();
         }
     }
 
     fn walk_json(self: *Self) anyerror!void {
         try self.skip_space();
-
-        if (self.nc == 0)
-            return SmatterError.EndOfInput;
 
         return switch (self.nc) {
             '[' => try self.walk_array(),
@@ -263,7 +264,7 @@ const Smatter = struct {
                 try self.emit("o", "\"null\"");
             },
             '0'...'9', '-' => self.emit("n", try self.scan_number()),
-            else => SmatterError.BadToken,
+            else => self.nice_error(SmatterError.BadToken),
         };
     }
 
@@ -285,18 +286,6 @@ const Smatter = struct {
             }
             if (self.nc == 0) break;
         }
-    }
-
-    pub fn walk_and_report(self: *Self) !void {
-        return self.walk() catch |err| {
-            std.debug.print("Syntax error in {s}, line {d}, column {d}: {s}\n", .{
-                self.source,
-                self.line,
-                self.col,
-                @errorName(err),
-            });
-            return err;
-        };
     }
 };
 
@@ -435,7 +424,7 @@ fn bufferedWriterSize(comptime size: usize, stream: anytype) BW(size, @TypeOf(st
     return .{ .unbuffered_writer = stream };
 }
 
-fn walk(
+fn smat_stream(
     alloc: std.mem.Allocator,
     source: []const u8,
     reader: std.io.AnyReader,
@@ -443,10 +432,19 @@ fn walk(
 ) !void {
     var sm = try Smatter.init(alloc, source, reader, writer);
     defer sm.deinit();
-    try sm.walk_and_report();
+
+    sm.walk() catch |err| {
+        const file = if (std.mem.eql(u8, source, "-")) "<stdin>" else source;
+        const nc = if (std.ascii.isPrint(sm.nc)) sm.nc else '?';
+        std.debug.print(
+            \\Syntax error: {s} ('{c}') in {s} line {d}, column {d}
+            \\
+        , .{ @errorName(err), nc, file, sm.line, sm.col });
+        std.process.exit(1);
+    };
 }
 
-fn smatter(source: []const u8, name_override: []const u8) !void {
+fn smat_file(source: []const u8, name_override: []const u8) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
@@ -459,14 +457,14 @@ fn smatter(source: []const u8, name_override: []const u8) !void {
 
         var in_buf = std.io.bufferedReaderSize(128 * 1024, in_file.reader());
         const reader = in_buf.reader().any();
-        try walk(arena.allocator(), name_override, reader, writer);
+        try smat_stream(arena.allocator(), name_override, reader, writer);
     } else {
         const in_file = try std.fs.cwd().openFile(source, .{});
         defer in_file.close();
 
         var in_buf = std.io.bufferedReaderSize(128 * 1024, in_file.reader());
         const reader = in_buf.reader().any();
-        try walk(arena.allocator(), source, reader, writer);
+        try smat_stream(arena.allocator(), source, reader, writer);
     }
 
     try out_buf.flush();
@@ -479,11 +477,11 @@ const Config = struct {
 
 var config = Config{ .files = undefined, .name_override = "-" };
 
-fn run_smatter() !void {
+fn smatter() !void {
     for (config.files) |file| {
-        smatter(file, config.name_override) catch |err| {
-            std.debug.print("{s} in {s}\n", .{ @errorName(err), file });
-            return err;
+        smat_file(file, config.name_override) catch |err| {
+            std.debug.print("{s}: {s}\n", .{ file, @errorName(err) });
+            std.process.exit(1);
         };
     }
 }
@@ -513,7 +511,7 @@ pub fn main() !void {
                             },
                         }),
                     },
-                    .exec = run_smatter,
+                    .exec = smatter,
                 },
             },
         },
