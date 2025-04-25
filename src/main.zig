@@ -16,7 +16,7 @@ fn smatStream(
     var sm = try smat.Smatter.init(alloc, source, reader, writer);
     defer sm.deinit();
 
-    sm.walk() catch |err| {
+    sm.run() catch |err| {
         const file = if (std.mem.eql(u8, source, "-")) "<stdin>" else source;
         const nc = if (std.ascii.isPrint(sm.nc)) sm.nc else '?';
         std.debug.print(

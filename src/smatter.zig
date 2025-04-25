@@ -127,7 +127,7 @@ pub const Smatter = struct {
         return self.value.items;
     }
 
-    fn scanLiteral(self: *Self, comptime need: []const u8) ![]const u8 {
+    fn requireWord(self: *Self, comptime need: []const u8) ![]const u8 {
         const word = try self.scanWord();
         if (!std.mem.eql(u8, word, need)) try self.niceError(SmatterError.BadToken);
         return word;
@@ -247,10 +247,10 @@ pub const Smatter = struct {
             '[' => try self.scanArray(),
             '{' => try self.scanObject(),
             '"' => self.emit("s", try self.scanString()),
-            't' => self.emit("b", try self.scanLiteral("true")),
-            'f' => self.emit("b", try self.scanLiteral("false")),
+            't' => self.emit("b", try self.requireWord("true")),
+            'f' => self.emit("b", try self.requireWord("false")),
             'n' => {
-                _ = try self.scanLiteral("null");
+                _ = try self.requireWord("null");
                 try self.emit("o", "\"null\"");
             },
             '0'...'9', '-' => self.emit("n", try self.scanNumber()),
@@ -258,7 +258,7 @@ pub const Smatter = struct {
         };
     }
 
-    pub fn walk(self: *Self) !void {
+    pub fn run(self: *Self) !void {
         self.index = 0;
         while (true) : (self.index += 1) {
             try self.scanJson();

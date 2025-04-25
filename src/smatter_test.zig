@@ -139,7 +139,7 @@ test "Smatter" {
         );
         defer sm.deinit();
 
-        try sm.walk();
+        try sm.run();
         try std.testing.expectEqualDeep(output.items, case.expected);
     }
 }
