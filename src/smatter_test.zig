@@ -3,7 +3,7 @@ const smat = @import("smatter.zig");
 
 const expect = std.testing.expect;
 
-test "smatter" {
+test "Smatter" {
     const StringReader = struct {
         str: []const u8,
         pos: usize,

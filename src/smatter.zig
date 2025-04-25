@@ -18,11 +18,11 @@ pub const Smatter = struct {
 
     path: std.ArrayList(u8),
     value: std.ArrayList(u8),
-    index: usize,
 
-    nc: u8,
-    line: usize,
-    col: usize,
+    index: usize = 0,
+    nc: u8 = '.',
+    line: usize = 1,
+    col: usize = 0,
 
     const Self = @This();
 
@@ -44,12 +44,8 @@ pub const Smatter = struct {
             .source = source,
             .reader = reader,
             .writer = writer,
-            .index = 0,
             .path = path,
             .value = value,
-            .nc = '.',
-            .line = 1,
-            .col = 0,
         };
 
         try self.advance();
@@ -64,16 +60,14 @@ pub const Smatter = struct {
 
     fn advance(self: *Self) !void {
         if (self.nc == 0) return SmatterError.EndOfInput;
-        if (self.reader.readByte()) |nc| {
-            self.nc = nc;
-            self.col += 1;
-        } else |err| {
+        self.nc = self.reader.readByte() catch |err| brk: {
             if (err != error.EndOfStream) return err;
-            self.nc = 0;
-        }
+            break :brk 0;
+        };
+        self.col += 1;
     }
 
-    fn skip_space(self: *Self) !void {
+    fn skipSpace(self: *Self) !void {
         while (std.ascii.isWhitespace(self.nc)) {
             if (self.nc == '\n') {
                 self.line += 1;
@@ -89,14 +83,14 @@ pub const Smatter = struct {
         try self.advance();
     }
 
-    fn nice_error(self: Self, err: SmatterError) SmatterError!void {
+    fn niceError(self: Self, err: SmatterError) SmatterError!void {
         return if (self.nc == 0)
             SmatterError.EndOfInput
         else
             err;
     }
 
-    fn clear_value(self: *Self) void {
+    fn clearValue(self: *Self) void {
         self.value.items.len = 0;
     }
 
@@ -107,8 +101,8 @@ pub const Smatter = struct {
         , .{ self.source, self.index, self.path.items, type_name, value });
     }
 
-    fn scan_string(self: *Self) ![]const u8 {
-        self.clear_value();
+    fn scanString(self: *Self) ![]const u8 {
+        self.clearValue();
         try self.keep();
 
         while (self.nc != '"') {
@@ -121,46 +115,46 @@ pub const Smatter = struct {
         return self.value.items;
     }
 
-    fn require_string(self: *Self) ![]const u8 {
-        try self.skip_space();
-        if (self.nc != '"') try self.nice_error(SmatterError.BadString);
-        return try self.scan_string();
+    fn requireString(self: *Self) ![]const u8 {
+        try self.skipSpace();
+        if (self.nc != '"') try self.niceError(SmatterError.BadString);
+        return try self.scanString();
     }
 
-    fn scan_word(self: *Self) ![]const u8 {
-        self.clear_value();
+    fn scanWord(self: *Self) ![]const u8 {
+        self.clearValue();
         while (std.ascii.isAlphabetic(self.nc)) try self.keep();
         return self.value.items;
     }
 
-    fn scan_literal(self: *Self, comptime need: []const u8) ![]const u8 {
-        const word = try self.scan_word();
-        if (!std.mem.eql(u8, word, need)) try self.nice_error(SmatterError.BadToken);
+    fn scanLiteral(self: *Self, comptime need: []const u8) ![]const u8 {
+        const word = try self.scanWord();
+        if (!std.mem.eql(u8, word, need)) try self.niceError(SmatterError.BadToken);
         return word;
     }
 
-    fn consume_digits(self: *Self) !void {
-        if (!std.ascii.isDigit(self.nc)) try self.nice_error(SmatterError.BadNumber);
+    fn consumeDigits(self: *Self) !void {
+        if (!std.ascii.isDigit(self.nc)) try self.niceError(SmatterError.BadNumber);
         while (std.ascii.isDigit(self.nc)) try self.keep();
     }
 
-    fn scan_number(self: *Self) ![]const u8 {
-        self.clear_value();
+    fn scanNumber(self: *Self) ![]const u8 {
+        self.clearValue();
         if (self.nc == '-') try self.keep();
-        try self.consume_digits();
+        try self.consumeDigits();
         if (self.nc == '.') {
             try self.keep();
-            try self.consume_digits();
+            try self.consumeDigits();
         }
         if (self.nc == 'e' or self.nc == 'E') {
             try self.keep();
             if (self.nc == '+' or self.nc == '-') try self.keep();
-            try self.consume_digits();
+            try self.consumeDigits();
         }
         return self.value.items;
     }
 
-    fn add_index_to_path(self: *Self, index: usize) !void {
+    fn addIndexToPath(self: *Self, index: usize) !void {
         var buffer: [30]u8 = undefined;
         const len = std.fmt.formatIntBuf(&buffer, index, 10, .lower, .{});
         try self.path.append('[');
@@ -168,9 +162,9 @@ pub const Smatter = struct {
         try self.path.append(']');
     }
 
-    fn add_key_to_path(self: *Self, key: []const u8) !void {
+    fn addKeyToPath(self: *Self, key: []const u8) !void {
         const word = key[1 .. key.len - 1];
-        if (ctype.is_bareword(word)) {
+        if (ctype.isBareword(word)) {
             try self.path.append('.');
             try self.path.appendSlice(word);
         } else {
@@ -183,9 +177,9 @@ pub const Smatter = struct {
         }
     }
 
-    fn scan_array(self: *Self) !void {
+    fn scanArray(self: *Self) !void {
         try self.advance();
-        try self.skip_space();
+        try self.skipSpace();
         if (self.nc == ']') {
             try self.advance();
             return self.emit("o", "\"[]\"");
@@ -196,15 +190,15 @@ pub const Smatter = struct {
         var index: usize = 0;
         while (true) : (index += 1) {
             self.path.items.len = old_len;
-            try self.add_index_to_path(index);
-            try self.scan_json();
-            try self.skip_space();
+            try self.addIndexToPath(index);
+            try self.scanJson();
+            try self.skipSpace();
 
             if (self.nc == ']') {
                 try self.advance();
                 break;
             }
-            if (self.nc != ',') try self.nice_error(SmatterError.MissingComma);
+            if (self.nc != ',') try self.niceError(SmatterError.MissingComma);
             try self.advance();
         }
 
@@ -212,9 +206,9 @@ pub const Smatter = struct {
         self.path.items.len = old_len;
     }
 
-    fn scan_object(self: *Self) !void {
+    fn scanObject(self: *Self) !void {
         try self.advance();
-        try self.skip_space();
+        try self.skipSpace();
 
         if (self.nc == '}') {
             try self.advance();
@@ -225,20 +219,20 @@ pub const Smatter = struct {
 
         while (true) {
             self.path.items.len = old_len;
-            const key = try self.require_string();
-            try self.add_key_to_path(key);
-            try self.skip_space();
-            if (self.nc != ':') try self.nice_error(SmatterError.MissingColon);
+            const key = try self.requireString();
+            try self.addKeyToPath(key);
+            try self.skipSpace();
+            if (self.nc != ':') try self.niceError(SmatterError.MissingColon);
             try self.advance();
 
-            try self.scan_json();
-            try self.skip_space();
+            try self.scanJson();
+            try self.skipSpace();
 
             if (self.nc == '}') {
                 try self.advance();
                 break;
             }
-            if (self.nc != ',') try self.nice_error(SmatterError.MissingComma);
+            if (self.nc != ',') try self.niceError(SmatterError.MissingComma);
             try self.advance();
         }
 
@@ -246,32 +240,32 @@ pub const Smatter = struct {
         self.path.items.len = old_len;
     }
 
-    fn scan_json(self: *Self) anyerror!void {
-        try self.skip_space();
+    fn scanJson(self: *Self) anyerror!void {
+        try self.skipSpace();
 
         return switch (self.nc) {
-            '[' => try self.scan_array(),
-            '{' => try self.scan_object(),
-            '"' => self.emit("s", try self.scan_string()),
-            't' => self.emit("b", try self.scan_literal("true")),
-            'f' => self.emit("b", try self.scan_literal("false")),
+            '[' => try self.scanArray(),
+            '{' => try self.scanObject(),
+            '"' => self.emit("s", try self.scanString()),
+            't' => self.emit("b", try self.scanLiteral("true")),
+            'f' => self.emit("b", try self.scanLiteral("false")),
             'n' => {
-                _ = try self.scan_literal("null");
+                _ = try self.scanLiteral("null");
                 try self.emit("o", "\"null\"");
             },
-            '0'...'9', '-' => self.emit("n", try self.scan_number()),
-            else => self.nice_error(SmatterError.BadToken),
+            '0'...'9', '-' => self.emit("n", try self.scanNumber()),
+            else => self.niceError(SmatterError.BadToken),
         };
     }
 
     pub fn walk(self: *Self) !void {
         self.index = 0;
         while (true) : (self.index += 1) {
-            try self.scan_json();
-            try self.skip_space();
+            try self.scanJson();
+            try self.skipSpace();
             if (self.nc == ',') {
                 try self.advance();
-                try self.skip_space();
+                try self.skipSpace();
             }
             if (self.nc == 0) break;
         }

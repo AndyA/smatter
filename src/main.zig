@@ -7,7 +7,7 @@ fn bufferedWriterSize(comptime size: usize, stream: anytype) BW(size, @TypeOf(st
     return .{ .unbuffered_writer = stream };
 }
 
-fn smat_stream(
+fn smatStream(
     alloc: std.mem.Allocator,
     source: []const u8,
     reader: std.io.AnyReader,
@@ -27,7 +27,7 @@ fn smat_stream(
     };
 }
 
-fn smat_file(source: []const u8, name_override: []const u8) !void {
+fn smatFile(source: []const u8, name_override: []const u8) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
@@ -40,14 +40,14 @@ fn smat_file(source: []const u8, name_override: []const u8) !void {
 
         var in_buf = std.io.bufferedReaderSize(128 * 1024, in_file.reader());
         const reader = in_buf.reader().any();
-        try smat_stream(arena.allocator(), name_override, reader, writer);
+        try smatStream(arena.allocator(), name_override, reader, writer);
     } else {
         const in_file = try std.fs.cwd().openFile(source, .{});
         defer in_file.close();
 
         var in_buf = std.io.bufferedReaderSize(128 * 1024, in_file.reader());
         const reader = in_buf.reader().any();
-        try smat_stream(arena.allocator(), source, reader, writer);
+        try smatStream(arena.allocator(), source, reader, writer);
     }
 
     try out_buf.flush();
@@ -62,7 +62,7 @@ var config = Config{ .files = undefined, .name_override = "-" };
 
 fn smatter() !void {
     for (config.files) |file| {
-        smat_file(file, config.name_override) catch |err| {
+        smatFile(file, config.name_override) catch |err| {
             std.debug.print("{s}: {s}\n", .{ file, @errorName(err) });
             std.process.exit(1);
         };
