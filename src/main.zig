@@ -1,20 +1,15 @@
 const std = @import("std");
-const cli = @import("zig-cli");
+const clap = @import("clap");
 const smat = @import("smatter.zig");
-
-const BW = std.io.BufferedWriter;
-fn bufferedWriterSize(comptime size: usize, stream: anytype) BW(size, @TypeOf(stream)) {
-    return .{ .unbuffered_writer = stream };
-}
 
 fn smatStream(
     alloc: std.mem.Allocator,
     source: []const u8,
-    reader: std.io.AnyReader,
-    writer: std.io.AnyWriter,
+    reader: *std.io.Reader,
+    writer: *std.io.Writer,
 ) !void {
     var sm = try smat.Smatter.init(alloc, source, reader, writer);
-    defer sm.deinit();
+    defer sm.deinit(alloc);
 
     sm.run() catch |err| {
         const file = if (std.mem.eql(u8, source, "-")) "<stdin>" else source;
@@ -31,74 +26,75 @@ fn smatFile(source: []const u8, name_override: []const u8) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    const out_file = std.io.getStdOut();
-    var out_buf = bufferedWriterSize(128 * 1024, out_file.writer());
-    const writer = out_buf.writer().any();
+    var src: std.fs.File = if (std.mem.eql(u8, source, "-"))
+        std.fs.File.stdin()
+    else
+        try std.fs.cwd().openFile(source, .{});
 
-    if (std.mem.eql(u8, source, "-")) {
-        const in_file = std.io.getStdIn();
+    var r_buf: [128 * 1024]u8 = undefined;
+    var w_buf: [128 * 1024]u8 = undefined;
 
-        var in_buf = std.io.bufferedReaderSize(128 * 1024, in_file.reader());
-        const reader = in_buf.reader().any();
-        try smatStream(arena.allocator(), name_override, reader, writer);
-    } else {
-        const in_file = try std.fs.cwd().openFile(source, .{});
-        defer in_file.close();
+    var r = src.reader(&r_buf);
+    var w = std.fs.File.stdout().writer(&w_buf);
 
-        var in_buf = std.io.bufferedReaderSize(128 * 1024, in_file.reader());
-        const reader = in_buf.reader().any();
-        try smatStream(arena.allocator(), source, reader, writer);
-    }
+    try smatStream(arena.allocator(), name_override, &r.interface, &w.interface);
 
-    try out_buf.flush();
+    try w.interface.flush();
 }
 
-const Config = struct {
-    files: []const []const u8,
-    name_override: []const u8,
-};
-
-var config = Config{ .files = undefined, .name_override = "-" };
-
-fn smatter() !void {
-    for (config.files) |file| {
-        smatFile(file, config.name_override) catch |err| {
+fn smatter(files: []const []const u8, name_override: ?[]const u8) !void {
+    for (files) |file| {
+        smatFile(file, name_override orelse file) catch |err| {
             std.debug.print("{s}: {s}\n", .{ file, @errorName(err) });
             std.process.exit(1);
         };
     }
 }
 
-pub fn main() !void {
-    var r = try cli.AppRunner.init(std.heap.page_allocator);
+fn help(comptime params: anytype) !void {
+    var w_buf: [1024]u8 = undefined;
+    var w = std.fs.File.stdout().writer(&w_buf);
 
-    const app = cli.App{
-        .command = cli.Command{
-            .name = "smatter",
-            .options = try r.allocOptions(&.{
-                .{
-                    .long_name = "filename",
-                    .short_alias = 'f',
-                    .help = "Override the 'f' (filename) field in the output.",
-                    .value_ref = r.mkRef(&config.name_override),
-                },
-            }),
-            .target = cli.CommandTarget{
-                .action = cli.CommandAction{
-                    .positional_args = cli.PositionalArgs{
-                        .required = try r.allocPositionalArgs(&.{
-                            .{
-                                .name = "files",
-                                .help = "Files to process. Use '-' for stdin.",
-                                .value_ref = r.mkRef(&config.files),
-                            },
-                        }),
-                    },
-                    .exec = smatter,
-                },
-            },
-        },
+    try w.interface.writeAll(
+        \\Usage:
+        \\    smatter [OPTIONS] <file>...
+        \\
+        \\Options:
+        \\
+    );
+
+    try clap.help(&w.interface, clap.Help, &params, .{ .max_width = 75 });
+
+    try w.interface.writeAll("\n");
+    try w.interface.flush();
+}
+
+pub fn main() !void {
+    const alloc = std.heap.page_allocator;
+    const parsers = comptime .{
+        .name = clap.parsers.string,
+        .file = clap.parsers.string,
     };
 
-    return r.run(&app);
+    const params = comptime clap.parseParamsComptime(
+        \\    <file>...                 Files to process.
+        \\    -h, --help                Display this help and exit.
+        \\    -f, --filename <name>     Filename to use instead of '-' in the output 
+        \\                              when reading from stdin. 
+    );
+
+    var diag = clap.Diagnostic{};
+    var res = clap.parse(clap.Help, &params, parsers, .{
+        .diagnostic = &diag,
+        .allocator = alloc,
+    }) catch |err| {
+        try diag.reportToFile(.stderr(), err);
+        return err;
+    };
+    defer res.deinit();
+
+    if (res.args.help != 0)
+        return help(params);
+
+    return smatter(res.positionals[0], res.args.filename);
 }

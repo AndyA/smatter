@@ -13,8 +13,8 @@ pub const SmatterError = error{
 pub const Smatter = struct {
     alloc: std.mem.Allocator,
     source: []const u8,
-    reader: std.io.AnyReader,
-    writer: std.io.AnyWriter,
+    reader: *std.io.Reader,
+    writer: *std.io.Writer,
 
     path: std.ArrayList(u8),
     value: std.ArrayList(u8),
@@ -29,15 +29,15 @@ pub const Smatter = struct {
     pub fn init(
         alloc: std.mem.Allocator,
         source: []const u8,
-        reader: std.io.AnyReader,
-        writer: std.io.AnyWriter,
+        reader: *std.io.Reader,
+        writer: *std.io.Writer,
     ) !Self {
         var path = try std.ArrayList(u8).initCapacity(alloc, 1000);
-        errdefer path.deinit();
-        try path.append('$');
+        errdefer path.deinit(alloc);
+        try path.append(alloc, '$');
 
-        const value = try std.ArrayList(u8).initCapacity(alloc, 1000);
-        errdefer value.deinit();
+        var value = try std.ArrayList(u8).initCapacity(alloc, 1000);
+        errdefer value.deinit(alloc);
 
         var self = Self{
             .alloc = alloc,
@@ -53,14 +53,14 @@ pub const Smatter = struct {
         return self;
     }
 
-    pub fn deinit(self: *Self) void {
-        self.path.deinit();
-        self.value.deinit();
+    pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
+        self.path.deinit(alloc);
+        self.value.deinit(alloc);
     }
 
     fn advance(self: *Self) !void {
         if (self.nc == 0) return SmatterError.EndOfInput;
-        self.nc = self.reader.readByte() catch |err| brk: {
+        self.nc = self.reader.takeByte() catch |err| brk: {
             if (err != error.EndOfStream) return err;
             break :brk 0;
         };
@@ -79,7 +79,7 @@ pub const Smatter = struct {
 
     fn keep(self: *Self) !void {
         if (self.nc == 0) return SmatterError.EndOfInput;
-        try self.value.append(self.nc);
+        try self.value.append(self.alloc, self.nc);
         try self.advance();
     }
 
@@ -156,24 +156,25 @@ pub const Smatter = struct {
 
     fn addIndexToPath(self: *Self, index: usize) !void {
         var buffer: [30]u8 = undefined;
-        const len = std.fmt.formatIntBuf(&buffer, index, 10, .lower, .{});
-        try self.path.append('[');
-        try self.path.appendSlice(buffer[0..len]);
-        try self.path.append(']');
+        const len = std.fmt.printInt(&buffer, index, 10, .lower, .{});
+        try self.path.append(self.alloc, '[');
+        try self.path.appendSlice(self.alloc, buffer[0..len]);
+        try self.path.append(self.alloc, ']');
     }
 
     fn addKeyToPath(self: *Self, key: []const u8) !void {
+        const alloc = self.alloc;
         const word = key[1 .. key.len - 1];
         if (ctype.isBareword(word)) {
-            try self.path.append('.');
-            try self.path.appendSlice(word);
+            try self.path.append(alloc, '.');
+            try self.path.appendSlice(alloc, word);
         } else {
-            try self.path.appendSlice("[\\\"");
+            try self.path.appendSlice(alloc, "[\\\"");
             for (word) |c| {
-                if (c == '\\' or c == '\"') try self.path.append('\\');
-                try self.path.append(c);
+                if (c == '\\' or c == '\"') try self.path.append(alloc, '\\');
+                try self.path.append(alloc, c);
             }
-            try self.path.appendSlice("\\\"]");
+            try self.path.appendSlice(alloc, "\\\"]");
         }
     }
 
