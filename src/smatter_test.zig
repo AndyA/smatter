@@ -52,11 +52,11 @@ test "Smatter" {
         \\
         },
         .{ .source = 
-        \\{"a":1, "c": [ ], "b": {"d": 2}}
+        \\{"a":1, "c": [ ], "b": {"d" : 2 }}
         \\[1, 2, 3]
         \\true
         \\false
-        \\[ true, false, null, -1.23, 999999999999999999999999, "hello", "world" ]
+        \\[ true, false, null, -1.23, 999999999999999999999999,"hello", "world" ]
         , .expected = 
         \\{"f":"test.json","i":0,"p":"$.a","n":1}
         \\{"f":"test.json","i":0,"p":"$.c","o":"[]"}
@@ -109,12 +109,7 @@ test "Smatter" {
         var w = std.io.Writer.Allocating.fromArrayList(alloc, &buf);
         defer w.deinit();
 
-        var sm = try smat.Smatter.init(
-            std.testing.allocator,
-            "test.json",
-            &r,
-            &w.writer,
-        );
+        var sm = try smat.Smatter.init(alloc, "test.json", &r, &w.writer);
         defer sm.deinit(alloc);
 
         try sm.run();
