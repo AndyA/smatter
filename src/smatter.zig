@@ -272,3 +272,7 @@ pub const Smatter = struct {
         }
     }
 };
+
+test {
+    _ = @import("smatter_test.zig");
+}

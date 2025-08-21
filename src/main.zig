@@ -100,5 +100,5 @@ pub fn main() !void {
 }
 
 test {
-    _ = @import("smatter_test.zig");
+    _ = @import("smatter.zig");
 }
