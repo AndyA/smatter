@@ -98,3 +98,7 @@ pub fn main() !void {
 
     return smatter(res.positionals[0], res.args.filename);
 }
+
+test {
+    _ = @import("smatter_test.zig");
+}

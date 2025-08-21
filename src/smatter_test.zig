@@ -4,31 +4,6 @@ const smat = @import("smatter.zig");
 const expect = std.testing.expect;
 
 test "Smatter" {
-    const StringReader = struct {
-        str: []const u8,
-        pos: usize,
-
-        const Error = error{NoError};
-        const Self = @This();
-        const Reader = std.io.Reader(*Self, Error, read);
-
-        fn init(str: []const u8) Self {
-            return Self{ .str = str, .pos = 0 };
-        }
-
-        fn read(self: *Self, dest: []u8) Error!usize {
-            const avail = self.str.len - self.pos;
-            const size = @min(avail, dest.len);
-            @memcpy(dest[0..size], self.str[self.pos .. self.pos + size]);
-            self.pos += size;
-            return size;
-        }
-
-        fn reader(self: *Self) Reader {
-            return .{ .context = self };
-        }
-    };
-
     const TestCase = struct {
         source: []const u8,
         expected: []const u8,
@@ -128,18 +103,24 @@ test "Smatter" {
     };
 
     for (cases) |case| {
-        var input = StringReader.init(case.source);
-        var output = std.ArrayList(u8).init(std.testing.allocator);
-        defer output.deinit();
+        const alloc = std.testing.allocator;
+        var r = std.io.Reader.fixed(case.source);
+        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        var w = std.io.Writer.Allocating.fromArrayList(alloc, &buf);
+        defer w.deinit();
+
         var sm = try smat.Smatter.init(
             std.testing.allocator,
             "test.json",
-            input.reader().any(),
-            output.writer().any(),
+            &r,
+            &w.writer,
         );
-        defer sm.deinit();
+        defer sm.deinit(alloc);
 
         try sm.run();
+        var output = w.toArrayList();
+        defer output.deinit(alloc);
+
         try std.testing.expectEqualDeep(output.items, case.expected);
     }
 }
