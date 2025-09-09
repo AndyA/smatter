@@ -13,8 +13,8 @@ pub const SmatterError = error{
 pub const Smatter = struct {
     alloc: std.mem.Allocator,
     source: []const u8,
-    reader: *std.io.Reader,
-    writer: *std.io.Writer,
+    reader: *std.Io.Reader,
+    writer: *std.Io.Writer,
 
     path: std.ArrayList(u8),
     value: std.ArrayList(u8),
@@ -29,8 +29,8 @@ pub const Smatter = struct {
     pub fn init(
         alloc: std.mem.Allocator,
         source: []const u8,
-        reader: *std.io.Reader,
-        writer: *std.io.Writer,
+        reader: *std.Io.Reader,
+        writer: *std.Io.Writer,
     ) !Self {
         var path = try std.ArrayList(u8).initCapacity(alloc, 1000);
         errdefer path.deinit(alloc);

@@ -5,8 +5,8 @@ const smat = @import("smatter.zig");
 fn smatStream(
     alloc: std.mem.Allocator,
     source: []const u8,
-    reader: *std.io.Reader,
-    writer: *std.io.Writer,
+    reader: *std.Io.Reader,
+    writer: *std.Io.Writer,
 ) !void {
     var sm = try smat.Smatter.init(alloc, source, reader, writer);
     defer sm.deinit(alloc);

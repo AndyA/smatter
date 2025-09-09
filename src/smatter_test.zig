@@ -104,9 +104,9 @@ test "Smatter" {
 
     for (cases) |case| {
         const alloc = std.testing.allocator;
-        var r = std.io.Reader.fixed(case.source);
+        var r = std.Io.Reader.fixed(case.source);
         var buf: std.ArrayListUnmanaged(u8) = .empty;
-        var w = std.io.Writer.Allocating.fromArrayList(alloc, &buf);
+        var w = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
         defer w.deinit();
 
         var sm = try smat.Smatter.init(alloc, "test.json", &r, &w.writer);
