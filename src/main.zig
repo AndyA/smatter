@@ -22,7 +22,7 @@ fn smatStream(
     };
 }
 
-fn smatFile(source: []const u8, name_override: []const u8) !void {
+fn smatFile(source: []const u8, name_override: []const u8, w: *std.Io.Writer) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
@@ -32,23 +32,23 @@ fn smatFile(source: []const u8, name_override: []const u8) !void {
         try std.fs.cwd().openFile(source, .{});
 
     var r_buf: [128 * 1024]u8 = undefined;
-    var w_buf: [128 * 1024]u8 = undefined;
-
     var r = src.reader(&r_buf);
-    var w = std.fs.File.stdout().writer(&w_buf);
 
-    try smatStream(arena.allocator(), name_override, &r.interface, &w.interface);
-
-    try w.interface.flush();
+    try smatStream(arena.allocator(), name_override, &r.interface, w);
 }
 
 fn smatter(files: []const []const u8, name_override: ?[]const u8) !void {
+    var w_buf: [128 * 1024]u8 = undefined;
+    var w = std.fs.File.stdout().writer(&w_buf);
+
     for (files) |file| {
-        smatFile(file, name_override orelse file) catch |err| {
+        smatFile(file, name_override orelse file, &w.interface) catch |err| {
             std.debug.print("{s}: {s}\n", .{ file, @errorName(err) });
             std.process.exit(1);
         };
     }
+
+    try w.interface.flush();
 }
 
 fn help(comptime params: anytype) !void {
@@ -77,10 +77,11 @@ pub fn main() !void {
     };
 
     const params = comptime clap.parseParamsComptime(
-        \\    <file>...                 Files to process.
+        \\    <file>...                 Files to process. Use "-" to read from 
+        \\                              stdin.
         \\    -h, --help                Display this help and exit.
-        \\    -f, --filename <name>     Filename to use instead of '-' in the output 
-        \\                              when reading from stdin. 
+        \\    -f, --filename <name>     Filename to output in the "f" property 
+        \\                              instead of "-" when reading from stdin. 
     );
 
     var diag = clap.Diagnostic{};
