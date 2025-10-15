@@ -26,15 +26,18 @@ fn smatFile(source: []const u8, name_override: []const u8, w: *std.Io.Writer) !v
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    var src: std.fs.File = if (std.mem.eql(u8, source, "-"))
-        std.fs.File.stdin()
-    else
-        try std.fs.cwd().openFile(source, .{});
-
     var r_buf: [128 * 1024]u8 = undefined;
-    var r = src.reader(&r_buf);
 
-    try smatStream(arena.allocator(), name_override, &r.interface, w);
+    if (std.mem.eql(u8, source, "-")) {
+        var src = std.fs.File.stdin();
+        var r = src.reader(&r_buf);
+        try smatStream(arena.allocator(), name_override, &r.interface, w);
+    } else {
+        var src = try std.fs.cwd().openFile(source, .{});
+        defer src.close();
+        var r = src.reader(&r_buf);
+        try smatStream(arena.allocator(), name_override, &r.interface, w);
+    }
 }
 
 fn smatter(files: []const []const u8, name_override: ?[]const u8) !void {
